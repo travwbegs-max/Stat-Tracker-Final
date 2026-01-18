@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Basketball Stat Tracker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f172a">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  body { font-family: Arial,sans-serif; background:#0f172a; color:#f8fafc; margin:0; padding:16px; text-align:center;}
+  input { padding:8px; font-size:16px; border-radius:8px; border:none; margin:4px;}
+  button { padding:12px; margin:4px; border-radius:10px; font-weight:bold; border:none; background:#2563eb; color:white; cursor:pointer;}
+  .danger { background:#dc2626;}
+  .secondary { background:#475569;}
+  .grid { display:grid; grid-template-columns: repeat(2,1fr); gap:6px; margin:8px 0;}
+  .live, .history { background:#020617; padding:10px; border-radius:10px; white-space:pre-line; margin-top:10px;}
+  select { padding:8px; font-size:16px; border-radius:8px; border:none; margin:4px;}
+</style>
+</head>
+<body>
+
+<h2>Basketball Stat Tracker</h2>
+
+<div id="setup">
+  <input id="gameName" placeholder="Game Name"><br>
+  <input id="playerName" placeholder="Player Name">
+  <button onclick="addPlayer()">Add Player</button>
+  <div id="playerList"></div>
+  <button class="secondary" onclick="startGame()">Start Game</button>
+</div>
+
+<div id="tracker" style="display:none">
+  <h3>Game: <span id="currentGameName"></span></h3>
+  <select id="currentPlayer" onchange="updateLive()"></select>
+  <div class="grid">
+    <button onclick="twoPtMade()">2PT Made</button>
+    <button onclick="threePtMade()">3PT Made</button>
+    <button onclick="addStat('rebounds')">Rebound</button>
+    <button onclick="addStat('assists')">Assist</button>
+    <button onclick="addStat('steals')">Steal</button>
+    <button onclick="addStat('blocks')">Block</button>
+    <button onclick="addStat('turnovers')">Turnover</button>
+    <button onclick="addStat('fouls')">Foul</button>
+    <button onclick="addStat('ftMade')">FT Made</button>
+    <button onclick="addStat('ftAttempted')">FT Attempt</button>
+  </div>
+  <button class="secondary" onclick="undo()">Undo</button>
+  <button class="danger" onclick="endGame()">End Game</button>
+  <button class="secondary" onclick="showHistory()">Game History</button>
+  <button class="secondary" onclick="exportStats()">Export All Games</button>
+
+  <div class="live" id="liveStats"></div>
+</div>
+
+<div class="history" id="history" style="display:none"></div>
+
+<script>
+let currentGame = null;
+let undoStack = [];
+let games = JSON.parse(localStorage.getItem("games") || "[]");
+
+function newStats() {
+  return {points:0,twoMade:0,twoAtt:0,threeMade:0,threeAtt:0,rebounds:0,assists:0,steals:0,blocks:0,turnovers:0,fouls:0,ftMade:0,ftAttempted:0};
+}
+
+function addPlayer() {
+  const name = document.getElementById("playerName").value.trim();
+  if(!name) return alert("Enter a name");
+  let div = document.getElementById("playerList");
+  let p = document.createElement("div");
+  p.innerText = name;
+  div.appendChild(p);
+  if(!currentGame) currentGame = {gameName:document.getElementById("gameName").value||"Game", players:[], date:new Date().toLocaleString()};
+  currentGame.players.push({name, stats:newStats()});
+  document.getElementById("playerName").value="";
+}
+
+function startGame() {
+  if(!currentGame || currentGame.players.length==0) return alert("Add at least one player");
+  document.getElementById("setup").style.display="none";
+  document.getElementById("tracker").style.display="block";
+  document.getElementById("currentGameName").innerText=currentGame.gameName;
+  let sel=document.getElementById("currentPlayer");
+  sel.innerHTML="";
+  currentGame.players.forEach((p,i)=>sel.add(new Option(p.name,i)));
+  updateLive();
+}
+
+function currentPlayerObj() {
+  let sel=document.getElementById("currentPlayer");
+  return currentGame.players[sel.selectedIndex];
+}
+
+function addStat(stat) {
+  let player=currentPlayerObj();
+  undoStack.push({player,stat,prev:player.stats[stat]});
+  player.stats[stat]++;
+  if(stat==='twoMade'||stat==='threeMade') player.stats.points+=stat==='twoMade'?2:3;
+  updateLive();
+}
+
+function twoPtMade(){let player=currentPlayerObj();undoStack.push({player,stat:'twoMade',prev:player.stats.twoMade});player.stats.twoMade++;player.stats.twoAtt++;player.stats.points+=2;updateLive();}
+function threePtMade(){let player=currentPlayerObj();undoStack.push({player,stat:'threeMade',prev:player.stats.threeMade});player.stats.threeMade++;player.stats.threeAtt++;player.stats.points+=3;updateLive();}
+
+function undo(){
+  if(undoStack.length==0) return;
+  let action=undoStack.pop();
+  action.player.stats[action.stat]=action.prev;
+  if(action.stat==='twoMade') action.player.stats.points-=2;
+  if(action.stat==='threeMade') action.player.stats.points-=3;
+  updateLive();
+}
+
+function updateLive(){
+  let s=currentPlayerObj().stats;
+  let text=`Player: ${currentPlayerObj().name}\nPTS:${s.points}\n2PT:${s.twoMade}/${s.twoAtt}\n3PT:${s.threeMade}/${s.threeAtt}\nREB:${s.rebounds}\nAST:${s.assists}\nSTL:${s.steals}\nBLK:${s.blocks}\nTO:${s.turnovers}\nFOULS:${s.fouls}\nFT:${s.ftMade}/${s.ftAttempted}`;
+  // team totals
+  let totals=newStats();
+  currentGame.players.forEach(p=>{for(let key in totals) totals[key]+=p.stats[key]});
+  text+="\n\nTeam Totals:\nPTS:"+totals.points+" 2PT:"+totals.twoMade+"/"+totals.twoAtt+" 3PT:"+totals.threeMade+"/"+totals.threeAtt+" REB:"+totals.rebounds+" AST:"+totals.assists+" STL:"+totals.steals+" BLK:"+totals.blocks+" TO:"+totals.turnovers+" FOULS:"+totals.fouls+" FT:"+totals.ftMade+"/"+totals.ftAttempted;
+  document.getElementById("liveStats").innerText=text;
+}
+
+function endGame(){
+  games.push(currentGame);
+  localStorage.setItem("games",JSON.stringify(games));
+  alert("Game saved!");
+  currentGame=null;
+  undoStack=[];
+  document.getElementById("tracker").style.display="none";
+  document.getElementById("setup").style.display="block";
+  document.getElementById("playerList").innerHTML="";
+  document.getElementById("playerName").value="";
+  document.getElementById("gameName").value="";
+}
+
+function showHistory(){
+  if(games.length==0) return alert("No saved games");
+  let div=document.getElementById("history");
+  div.style.display="block";
+  div.innerHTML="";
+  games.forEach((g,i)=>{
+    let b=document.createElement("button");
+    b.innerText=g.gameName+" ("+g.date+")";
+    b.onclick=()=>showGameStats(i);
+    div.appendChild(b);
+  });
+}
+
+function showGameStats(index){
+  let g=games[index];
+  let txt="Game: "+g.gameName+" ("+g.date+")\n";
+  g.players.forEach(p=>{
+    let s=p.stats;
+    txt+=p.name+" - PTS:"+s.points+" 2PT:"+s.twoMade+"/"+s.twoAtt+" 3PT:"+s.threeMade+"/"+s.threeAtt+" REB:"+s.rebounds+" AST:"+s.assists+" STL:"+s.steals+" BLK:"+s.blocks+" TO:"+s.turnovers+" FOULS:"+s.fouls+" FT:"+s.ftMade+"/"+s.ftAttempted+"\n";
+  });
+  alert(txt);
+}
+
+function exportStats(){
+  if(games.length==0) return alert("No games saved");
+  let csv="Game,Date,Player,PTS,2PT,3PT,REB,AST,STL,BLK,TO,FOULS,FT\n";
+  games.forEach(g=>{
+    g.players.forEach(p=>{
+      let s=p.stats;
+      csv+=`${g.gameName},${g.date},${p.name},${s.points},${s.twoMade}/${s.twoAtt},${s.threeMade}/${s.threeAtt},${s.rebounds},${s.assists},${s.steals},${s.blocks},${s.turnovers},${s.fouls},${s.ftMade}/${s.ftAttempted}\n`;
+    });
+  });
+  let blob=new Blob([csv],{type:"text/csv"});
+  let a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="basketball_stats.csv";
+  a.click();
+}
+
+// Service Worker for PWA
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("sw.js");
+}
+</script>
+
+</body>
+</html>
